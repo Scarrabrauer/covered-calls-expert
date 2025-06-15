@@ -1,1 +1,7 @@
 streamlit
+pandas
+fpdf
+matplotlib
+beautifulsoup4
+lxml
+requests

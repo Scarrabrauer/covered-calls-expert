@@ -31,7 +31,7 @@ st.markdown(f"**ISIN:** {isin}")
 div = dividenden.get(isin, "Unbekannt")
 st.markdown(f"**Dividende:** {div} € (pro Aktie, indikativ)")
 
-url = f"https://www.onvista.de/derivate/snapshot/suchergebnis/?basiswert={isin}"
+url = f"https://www.onvista.de/derivate/{isin}"
 st.markdown(f"[🔗 Onvista-Link]({url})")
 
 try:

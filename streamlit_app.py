@@ -1,50 +1,66 @@
-# protfolio report
 import streamlit as st
 import pandas as pd
-from io import BytesIO
-from fpdf import FPDF
+import requests
+from bs4 import BeautifulSoup
 
-st.set_page_config(page_title="📄 Covered Call Portfolio-Report", layout="centered")
-st.title("📄 Portfolio-Reporting: Covered Call Strategien")
+# Manuelle Dividendendatenbank
+dividenden = {
+    "DE0005557508": 0.90,  # Telekom
+    "DE0008404005": 11.40,  # Allianz
+    "DE0005190003": 6.00,   # BMW
+    "DE000BASF111": 2.25,   # BASF
+    "DE0007164600": 2.20    # SAP
+}
 
-st.markdown("Lade Deine Covered Call-Daten hoch (CSV-Format):")
-uploaded_file = st.file_uploader("📤 Datei hochladen", type="csv")
+st.set_page_config(page_title="Covered Call Screener DE", layout="wide")
+st.title("📊 Covered Call Screener – Deutsche Aktien (Onvista Webscraper)")
 
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
-    st.success("✅ Datei geladen")
-    st.dataframe(df)
+# Auswahl mehrerer Aktien
+isin_auswahl = {
+    "Deutsche Telekom AG (DTEGn.DE)": "DE0005557508",
+    "Allianz SE (ALV.DE)": "DE0008404005",
+    "BMW AG (BMW.DE)": "DE0005190003",
+    "BASF SE (BAS.DE)": "DE000BASF111",
+    "SAP SE (SAP.DE)": "DE0007164600"
+}
 
-    # PDF Generator
-    class PDF(FPDF):
-        def header(self):
-            self.set_font("Arial", "B", 12)
-            self.cell(0, 10, "Covered Call Report", ln=True, align="C")
+auswahl = st.selectbox("Wähle eine Aktie", options=list(isin_auswahl.keys()))
+isin = isin_auswahl[auswahl]
 
-        def chapter_title(self, title):
-            self.set_font("Arial", "B", 11)
-            self.ln(5)
-            self.cell(0, 10, title, ln=True)
+st.markdown(f"**ISIN:** {isin}")
+div = dividenden.get(isin, "Unbekannt")
+st.markdown(f"**Dividende:** {div} € (pro Aktie, indikativ)")
 
-        def chapter_body(self, text):
-            self.set_font("Arial", "", 10)
-            self.multi_cell(0, 10, text)
-            self.ln()
+url = f"https://www.onvista.de/derivate/snapshot/suchergebnis/?basiswert={isin}"
+st.markdown(f"[🔗 Onvista-Link]({url})")
 
-    def create_pdf(dataframe):
-        pdf = PDF()
-        pdf.add_page()
-        pdf.chapter_title("Übersicht")
-        summary = f"Anzahl Trades: {len(dataframe)}\nDurchschnittliche Prämie: {dataframe['Prämie'].mean():.2f}\n"
-        pdf.chapter_body(summary)
+try:
+    response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+    soup = BeautifulSoup(response.content, "html.parser")
+    table = soup.find("table")
 
-        pdf.chapter_title("Detaildaten")
-        for idx, row in dataframe.iterrows():
-            line = f"{row['Datum']} – {row['Aktie']} – Strike: {row['Strike']} – Prämie: {row['Prämie']} – Laufzeit: {row['Laufzeit']} Tage"
-            pdf.chapter_body(line)
+    df = pd.read_html(str(table))[0]
+    st.success("✅ Optionsdaten erfolgreich geladen!")
 
-        return pdf.output(dest='S').encode('latin1')
+    # Filter
+    col1, col2 = st.columns(2)
+    with col1:
+        strike_max = st.slider("📉 Max. Strikepreis anzeigen", 0, 500, 250)
+    with col2:
+        laufzeit = st.text_input("📅 Laufzeitfilter (z. B. 'Jul 2025')", "")
 
-    if st.button("📄 PDF-Report erstellen"):
-        pdf_bytes = create_pdf(df)
-        st.download_button("📥 PDF herunterladen", data=pdf_bytes, file_name="covered_call_report.pdf", mime="application/pdf")
+    # Filter anwenden
+    filtered_df = df.copy()
+    filtered_df = filtered_df[~filtered_df[df.columns[1]].astype(str).str.contains(str(strike_max)) == False]
+
+    if laufzeit:
+        filtered_df = filtered_df[filtered_df[df.columns[0]].astype(str).str.contains(laufzeit)]
+
+    st.subheader("📋 Gefilterte Optionen")
+    st.dataframe(filtered_df)
+
+    # CSV Export
+    st.download_button("📥 Tabelle als CSV herunterladen", filtered_df.to_csv(index=False), file_name=f"covered_calls_{isin}.csv", mime="text/csv")
+
+except Exception as e:
+    st.error(f"Fehler beim Laden: {e}")
